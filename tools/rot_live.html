@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Live Dial</title>
+<style>
+/* Layout: an instrument bench. The dial and the A/B plane sit side by side; traces, odds and moves under
+   them; every setting of the engine in panels at the bottom. Served by rot_live.py on 127.0.0.1. */
+:root {
+  --bg: #f3f4f1; --panel: #ffffff; --ink: #1b221f; --muted: #5d6863; --line: #dde2dd; --grid: #e8ece8;
+  --p0: #2a78d6; --p90: #eb6834; --p180: #1baf7a; --p270: #eda100;
+  --needle: #1b221f; --live: #c0392b; --accent: #2a6f5a; --warn: #a5541a;
+  --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "Cascadia Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --panel: #1a1f1c; --ink: #e3e8e5; --muted: #95a19b; --line: #2b322e; --grid: #232a26;
+    --p0: #3987e5; --p90: #d95926; --p180: #199e70; --p270: #c98500;
+    --needle: #e3e8e5; --live: #ff6b5b; --accent: #5cc4a0; --warn: #e89a5c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121614; --panel: #1a1f1c; --ink: #e3e8e5; --muted: #95a19b; --line: #2b322e; --grid: #232a26;
+  --p0: #3987e5; --p90: #d95926; --p180: #199e70; --p270: #c98500;
+  --needle: #e3e8e5; --live: #ff6b5b; --accent: #5cc4a0; --warn: #e89a5c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font-body);
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); }
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+h1 { font-size: 1.35rem; margin: 0; font-weight: 600; }
+h2 { font-size: 0.95rem; margin: 0 0 8px; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 12px var(--font-data); padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.chip.bad { color: var(--warn); border-color: var(--warn); }
+.chip.on { color: var(--accent); border-color: var(--accent); }
+.row { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
+.row3 { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 1fr); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; min-width: 0; }
+.big { display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; margin-top: 6px; }
+.big b { font: 600 1.6rem var(--font-data); }
+.big span { color: var(--muted); font-size: 0.85rem; }
+svg, canvas { display: block; width: 100%; }
+canvas { touch-action: none; }
+.muted { color: var(--muted); }
+.note { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
+.bars { display: grid; gap: 6px; }
+.bar { display: grid; grid-template-columns: 3.2em 1fr 3.4em; align-items: center; gap: 8px; font: 13px var(--font-data); }
+.bar i { height: 12px; border-radius: 0 4px 4px 0; display: block; min-width: 1px; }
+.bar .track { background: var(--grid); border-radius: 0 4px 4px 0; }
+ol.moves { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font: 12.5px var(--font-data); max-height: 260px; overflow-y: auto; }
+ol.moves li { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr); }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr) 7em; gap: 6px 10px; align-items: center; }
+.fields label { font-size: 0.85rem; }
+.fields small { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.3; }
+input, select, button { font: 13px var(--font-data); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 4px 6px; min-width: 0; }
+input[type="number"] { width: 100%; }
+button { cursor: pointer; background: var(--panel); }
+button:hover { border-color: var(--accent); }
+button.primary { border-color: var(--accent); color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tablebox { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font: 12.5px var(--font-data); }
+th, td { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { font: 600 11px var(--font-body); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+td input[type="number"] { width: 5.2em; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+#msg { font: 12.5px var(--font-data); min-height: 1.4em; }
+#msg.err { color: var(--warn); }
+.tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px 8px; font: 12px var(--font-data); display: none; z-index: 5; }
+@media (max-width: 980px) { .row, .row3, .settings { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>C live dial</h1>
+    <div class="chips" id="chips"><span class="chip bad">waiting for rot_live.py…</span></div>
+  </header>
+
+  <div class="row">
+    <section class="card">
+      <h2>Dial</h2>
+      <svg id="dial" viewBox="-170 -170 340 340" role="img" aria-label="Dial: the needle is the where-is-it-now reading, the ring marks the trend rules' position"></svg>
+      <div class="big">
+        <div><b id="needleTxt">–</b><br><span>needle (where is it now)</span></div>
+        <div><b id="trackedTxt">–</b><br><span>trend rules</span></div>
+        <div><b id="stateTxt">–</b><br><span>C is</span></div>
+      </div>
+      <p class="note">The needle swings between positions by how likely each one is; it's shorter when it's unsure. The ring marks where the trend rules think C is, and it moves only after C settles.</p>
+    </section>
+    <section class="card">
+      <h2>A/B plane: what A and B hear from C</h2>
+      <canvas id="plane" height="380" aria-label="A←C against B←C in dBm, with each position's calibration as an ellipse and the live reading as a dot with its trail"></canvas>
+      <p class="note">Each ellipse is one position's calibration (mean ± 1 SD). The dot is the live average with its trail; the cross is the trend rules' anchor (the last settled level).</p>
+    </section>
+  </div>
+
+  <div class="row3">
+    <section class="card">
+      <h2>Readings over time</h2>
+      <canvas id="trace" height="220" aria-label="A←C and B←C over the last minute"></canvas>
+      <p class="note">Thin: every reading. Thick: the needle's average. Hover for values.</p>
+    </section>
+    <section class="card">
+      <h2>How likely each position is</h2>
+      <div class="bars" id="bars"></div>
+      <div class="big"><div><b id="aTxt">–</b><br><span>A←C dBm</span></div><div><b id="bTxt">–</b><br><span>B←C dBm</span></div></div>
+    </section>
+    <section class="card">
+      <h2>Moves the trend rules saw</h2>
+      <ol class="moves" id="moves"><li class="muted">none yet</li></ol>
+    </section>
+  </div>
+
+  <div class="settings">
+    <section class="card">
+      <h2>Settings</h2>
+      <div class="fields" id="fields"></div>
+      <div class="btns">
+        <button class="primary" id="applySettings">Apply settings</button>
+        <button id="defaults">Restore R0 defaults</button>
+      </div>
+      <h2 style="margin-top:14px">This page only</h2>
+      <div class="fields">
+        <label for="trailS">Trail on the plane, s</label><input type="number" id="trailS" value="10" min="1" max="300">
+        <label for="traceS">Readings window, s</label><input type="number" id="traceS" value="60" min="5" max="300">
+      </div>
+      <p id="msg"></p>
+    </section>
+    <section class="card">
+      <h2>Trend rules (first matching row wins)</h2>
+      <div class="tablebox"><table id="rules"></table></div>
+      <div class="btns">
+        <button class="primary" id="applyRules">Apply rules</button>
+        <button id="addRule">Add a row</button>
+      </div>
+      <p class="note">A row matches when C was at "from" and the settled change since the anchor passes both tests. Changes under the no-turn threshold on both links never reach the table.</p>
+    </section>
+    <section class="card">
+      <h2>Calibration</h2>
+      <div class="tablebox"><table id="calib"></table></div>
+      <div class="btns"><button class="primary" id="applyCalib">Apply calibration</button></div>
+      <h2 style="margin-top:14px">C is at … now</h2>
+      <div class="btns" id="measureBtns"></div>
+      <p class="note">Sets that position's means from the last few seconds (the calibration window), keeping its SDs.</p>
+      <h2 style="margin-top:14px">Tell the trend rules where C is</h2>
+      <div class="btns" id="resetBtns"></div>
+    </section>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const POS = [0, 90, 180, 270];
+const FIELDS = [
+  ["short_n", "Recent window, readings", "the recent average (about 10 readings a second)"],
+  ["before_n", "Earlier window, readings", "compared with the recent one to see whether C is moving"],
+  ["gap_n", "Gap between them, readings", "readings skipped between the two windows"],
+  ["settle", "Settled below, dB", "recent and earlier averages closer than this on both links"],
+  ["still", "No turn below, dB", "a settled change smaller than this on both links isn't a move"],
+  ["drift_follow", "Drift follow, 0–1", "how much of a no-turn gap the anchor closes each tick"],
+  ["fallback", "No row matched", "nearest expected change, or stay where it was"],
+  ["now_n", "Needle window, readings", "readings in the where-is-it-now average"],
+  ["now_spread", "Needle uses each spread", "weigh each position by its own SD"],
+  ["now_smooth", "Needle smoothing, 0–1", "1 = none; 0.1 = slow and steady"],
+  ["calib_s", "Calibration window, s", "for 'C is at … now'"],
+];
+const OPS = ["<", "<=", ">", ">=", "any"];
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const colorOf = (p) => css(`--p${p}`);
+let state = null, formsFilled = false;
+const hist = [];  // {t, A, B, nA, nB}
+
+function msg(text, err) { const m = $("msg"); m.textContent = text; m.className = err ? "err" : ""; }
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+async function refill() { state = await (await fetch("/state")).json(); fillForms(); }
+
+// ---------- forms ----------
+function fillForms() {
+  const s = state.settings, f = $("fields");
+  f.innerHTML = "";
+  for (const [key, label, help] of FIELDS) {
+    const l = document.createElement("label"); l.htmlFor = `s_${key}`; l.innerHTML = `${label}<small>${help}</small>`;
+    let input;
+    if (key === "fallback") {
+      input = document.createElement("select");
+      for (const v of ["nearest", "stay"]) input.add(new Option(v, v, false, s[key] === v));
+    } else if (key === "now_spread") {
+      input = document.createElement("input"); input.type = "checkbox"; input.checked = !!s[key];
+    } else {
+      input = document.createElement("input"); input.type = "number"; input.value = s[key];
+      input.step = Number.isInteger(s[key]) && !["settle", "still"].includes(key) ? 1 : 0.05;
+    }
+    input.id = `s_${key}`;
+    f.append(l, input);
+  }
+  const t = $("rules");
+  t.innerHTML = "<tr><th>#</th><th>from</th><th>to</th><th>A change</th><th>B change</th><th></th></tr>";
+  s.rules.forEach((row, i) => t.append(ruleRow(row, i)));
+  const c = $("calib");
+  c.innerHTML = "<tr><th>position</th><th>A mean</th><th>A SD</th><th>B mean</th><th>B SD</th></tr>";
+  for (const p of POS) {
+    const k = state.calib[p] || { A: [-50, 3], B: [-50, 3] };
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><span class="swatch" style="background:${colorOf(p)}"></span>${p}°</td>` +
+      ["A", "B"].map((l) => `<td><input type="number" step="0.1" id="c_${p}_${l}_m" value="${(+k[l][0]).toFixed(2)}"></td>` +
+        `<td><input type="number" step="0.1" min="0.1" id="c_${p}_${l}_s" value="${(+k[l][1]).toFixed(2)}"></td>`).join("");
+    c.append(tr);
+  }
+  formsFilled = true;
+}
+function ruleRow(row, i) {
+  const tr = document.createElement("tr");
+  const sel = (vals, v, cls) => `<select class="${cls}">${vals.map((x) => `<option${x == v ? " selected" : ""}>${x}</option>`).join("")}</select>`;
+  tr.innerHTML = `<td>${i + 1}</td><td>${sel(POS, row.from, "r_from")}</td><td>${sel(POS, row.to, "r_to")}</td>` +
+    `<td>${sel(OPS, row.A[0], "r_aop")} <input type="number" step="0.1" class="r_av" value="${row.A[1]}"></td>` +
+    `<td>${sel(OPS, row.B[0], "r_bop")} <input type="number" step="0.1" class="r_bv" value="${row.B[1]}"></td>` +
+    `<td><button class="r_del" aria-label="Delete rule ${i + 1}">Delete</button></td>`;
+  tr.querySelector(".r_del").onclick = () => { tr.remove(); renumber(); };
+  return tr;
+}
+function renumber() { [...$("rules").querySelectorAll("tr")].slice(1).forEach((tr, i) => { tr.cells[0].textContent = i + 1; }); }
+function readRules() {
+  return [...$("rules").querySelectorAll("tr")].slice(1).map((tr) => ({
+    from: +tr.querySelector(".r_from").value, to: +tr.querySelector(".r_to").value,
+    A: [tr.querySelector(".r_aop").value, +tr.querySelector(".r_av").value],
+    B: [tr.querySelector(".r_bop").value, +tr.querySelector(".r_bv").value],
+  }));
+}
+$("applySettings").onclick = async () => {
+  const body = {};
+  for (const [key] of FIELDS) {
+    const el = $(`s_${key}`);
+    body[key] = key === "now_spread" ? el.checked : key === "fallback" ? el.value : +el.value;
+  }
+  try { await post("/settings", body); msg("Settings applied."); await refill(); } catch (e) { msg(e.message, true); }
+};
+$("defaults").onclick = async () => {
+  try { await post("/defaults"); msg("R0 defaults restored, rules included."); await refill(); } catch (e) { msg(e.message, true); }
+};
+$("applyRules").onclick = async () => {
+  try { await post("/settings", { rules: readRules() }); msg("Rules applied."); await refill(); } catch (e) { msg(e.message, true); }
+};
+$("addRule").onclick = () => { $("rules").append(ruleRow({ from: 0, to: 90, A: ["any", 0], B: ["any", 0] }, 0)); renumber(); };
+$("applyCalib").onclick = async () => {
+  const body = {};
+  for (const p of POS) body[p] = Object.fromEntries(["A", "B"].map((l) => [l, [+$(`c_${p}_${l}_m`).value, +$(`c_${p}_${l}_s`).value]]));
+  try { await post("/calib", body); msg("Calibration applied."); await refill(); } catch (e) { msg(e.message, true); }
+};
+for (const p of POS) {
+  const b = document.createElement("button"); b.textContent = `${p}°`;
+  b.onclick = async () => { try { await post("/calibrate", { pos: p }); msg(`${p}° measured from the last ${state.settings.calib_s} s.`); await refill(); } catch (e) { msg(e.message, true); } };
+  $("measureBtns").append(b);
+  const r = document.createElement("button"); r.textContent = `at ${p}°`;
+  r.onclick = async () => { try { await post("/reset", { pos: p }); msg(`Trend rules now start from ${p}°.`); } catch (e) { msg(e.message, true); } };
+  $("resetBtns").append(r);
+}
+
+// ---------- dial ----------
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(parent, tag, attrs, text) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text !== undefined) n.textContent = text;
+  parent.appendChild(n); return n;
+}
+const toXY = (deg, r) => [r * Math.sin(deg * Math.PI / 180), -r * Math.cos(deg * Math.PI / 180)];  // 0° up, clockwise
+function drawDial() {
+  const svg = $("dial"); svg.innerHTML = "";
+  svgEl(svg, "circle", { cx: 0, cy: 0, r: 130, fill: "none", stroke: css("--line"), "stroke-width": 2 });
+  for (let d = 0; d < 360; d += 15) {
+    const [x1, y1] = toXY(d, d % 90 ? 124 : 116), [x2, y2] = toXY(d, 130);
+    svgEl(svg, "line", { x1, y1, x2, y2, stroke: css("--muted"), "stroke-width": d % 90 ? 1 : 2 });
+  }
+  if (!state) return;
+  const tracked = state.tracked;
+  for (const p of POS) {
+    const [x, y] = toXY(p, 150), on = p === tracked;
+    svgEl(svg, "circle", { cx: toXY(p, 130)[0], cy: toXY(p, 130)[1], r: on ? 11 : 6, fill: on ? colorOf(p) : css("--panel"),
+      stroke: colorOf(p), "stroke-width": 3 });
+    svgEl(svg, "text", { x, y: y + 5, "text-anchor": "middle", fill: css("--ink"), "font-size": 14, "font-weight": on ? 700 : 400,
+      "font-family": css("--font-data") }, `${p}°`);
+  }
+  if (state.angle !== null && state.angle !== undefined) {
+    const len = 30 + 85 * Math.max(0, Math.min(1, state.conf)), [x, y] = toXY(state.angle, len);
+    svgEl(svg, "line", { x1: 0, y1: 0, x2: x, y2: y, stroke: css("--needle"), "stroke-width": 5, "stroke-linecap": "round" });
+  }
+  svgEl(svg, "circle", { cx: 0, cy: 0, r: 7, fill: css("--needle") });
+  svgEl(svg, "text", { x: 0, y: 40, "text-anchor": "middle", fill: css("--muted"), "font-size": 11 }, "0° = antenna to A");
+}
+
+// ---------- canvases ----------
+function fit(canvas) {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.getAttribute("height") * 1;
+  if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); canvas.style.height = h + "px"; }
+  const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); return [g, w, h];
+}
+function planeRange() {
+  let lo = { A: Infinity, B: Infinity }, hi = { A: -Infinity, B: -Infinity };
+  for (const p of POS) { const k = state.calib[p]; if (!k) continue;
+    for (const l of ["A", "B"]) { lo[l] = Math.min(lo[l], k[l][0] - k[l][1] - 3); hi[l] = Math.max(hi[l], k[l][0] + k[l][1] + 3); } }
+  for (const h of hist) { for (const l of ["A", "B"]) { const v = h["n" + l]; if (v != null) { lo[l] = Math.min(lo[l], v - 2); hi[l] = Math.max(hi[l], v + 2); } } }
+  return { lo, hi };
+}
+function drawPlane() {
+  const [g, w, h] = fit($("plane")); g.clearRect(0, 0, w, h);
+  if (!state || !state.calib) return;
+  const m = { l: 46, r: 12, t: 10, b: 34 }, { lo, hi } = planeRange();
+  const X = (a) => m.l + (a - lo.A) / (hi.A - lo.A) * (w - m.l - m.r), Y = (b) => h - m.b - (b - lo.B) / (hi.B - lo.B) * (h - m.t - m.b);
+  g.font = `11px ${css("--font-data")}`; g.fillStyle = css("--muted"); g.strokeStyle = css("--grid"); g.lineWidth = 1;
+  for (let a = Math.ceil(lo.A / 5) * 5; a <= hi.A; a += 5) { g.beginPath(); g.moveTo(X(a), m.t); g.lineTo(X(a), h - m.b); g.stroke(); g.textAlign = "center"; g.fillText(a, X(a), h - m.b + 14); }
+  for (let b = Math.ceil(lo.B / 5) * 5; b <= hi.B; b += 5) { g.beginPath(); g.moveTo(m.l, Y(b)); g.lineTo(w - m.r, Y(b)); g.stroke(); g.textAlign = "right"; g.fillText(b, m.l - 6, Y(b) + 4); }
+  g.textAlign = "center"; g.fillText("A←C, dBm", (m.l + w - m.r) / 2, h - 4);
+  g.save(); g.translate(12, (m.t + h - m.b) / 2); g.rotate(-Math.PI / 2); g.fillText("B←C, dBm", 0, 0); g.restore();
+  for (const p of POS) {
+    const k = state.calib[p]; if (!k) continue;
+    const cx = X(k.A[0]), cy = Y(k.B[0]), rx = Math.abs(X(k.A[0] + k.A[1]) - cx), ry = Math.abs(Y(k.B[0] + k.B[1]) - cy);
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+    g.globalAlpha = 0.14; g.fillStyle = colorOf(p); g.fill(); g.globalAlpha = 1;
+    g.strokeStyle = colorOf(p); g.lineWidth = 2; g.stroke();
+    g.fillStyle = css("--ink"); g.font = `600 12px ${css("--font-data")}`; g.textAlign = "center"; g.fillText(`${p}°`, cx, cy + 4);
+  }
+  const trailS = +$("trailS").value || 10, now = state.t, pts = hist.filter((x) => x.t > now - trailS && x.nA != null && x.nB != null);
+  g.strokeStyle = css("--live"); g.lineWidth = 1.5; g.globalAlpha = 0.6; g.beginPath();
+  pts.forEach((p, i) => (i ? g.lineTo(X(p.nA), Y(p.nB)) : g.moveTo(X(p.nA), Y(p.nB)))); g.stroke(); g.globalAlpha = 1;
+  if (state.anchor) {
+    const ax = X(state.anchor.A), ay = Y(state.anchor.B); g.strokeStyle = css("--ink"); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(ax - 6, ay - 6); g.lineTo(ax + 6, ay + 6); g.moveTo(ax + 6, ay - 6); g.lineTo(ax - 6, ay + 6); g.stroke();
+  }
+  const last = pts[pts.length - 1];
+  if (last) { g.beginPath(); g.arc(X(last.nA), Y(last.nB), 6, 0, 2 * Math.PI); g.fillStyle = css("--live"); g.fill(); g.lineWidth = 2; g.strokeStyle = css("--panel"); g.stroke(); }
+}
+let hoverX = null;
+function drawTrace() {
+  const c = $("trace"), [g, w, h] = fit(c); g.clearRect(0, 0, w, h);
+  if (!state || !hist.length) return;
+  const m = { l: 40, r: 44, t: 8, b: 22 }, span = +$("traceS").value || 60, now = state.t, pts = hist.filter((x) => x.t > now - span);
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) for (const v of [p.A, p.B]) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (!isFinite(lo)) return; lo = Math.floor(lo - 2); hi = Math.ceil(hi + 2);
+  const X = (t) => m.l + (t - (now - span)) / span * (w - m.l - m.r), Y = (v) => h - m.b - (v - lo) / (hi - lo) * (h - m.t - m.b);
+  g.font = `11px ${css("--font-data")}`; g.fillStyle = css("--muted"); g.strokeStyle = css("--grid"); g.lineWidth = 1;
+  const step = hi - lo > 30 ? 10 : 5;
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) { g.beginPath(); g.moveTo(m.l, Y(v)); g.lineTo(w - m.r, Y(v)); g.stroke(); g.textAlign = "right"; g.fillText(v, m.l - 6, Y(v) + 4); }
+  g.textAlign = "center"; for (let s = 0; s <= span; s += span > 90 ? 30 : 10) g.fillText(s ? `-${s}s` : "now", X(now - s), h - 6);
+  for (const [key, avgKey, col] of [["A", "nA", "--p0"], ["B", "nB", "--p90"]]) {
+    g.strokeStyle = css(col);
+    g.lineWidth = 1; g.globalAlpha = 0.45; g.beginPath(); let started = false;
+    for (const p of pts) { if (p[key] == null) continue; started ? g.lineTo(X(p.t), Y(p[key])) : g.moveTo(X(p.t), Y(p[key])); started = true; } g.stroke();
+    g.lineWidth = 2; g.globalAlpha = 1; g.beginPath(); started = false;
+    for (const p of pts) { if (p[avgKey] == null) continue; started ? g.lineTo(X(p.t), Y(p[avgKey])) : g.moveTo(X(p.t), Y(p[avgKey])); started = true; } g.stroke();
+    const end = pts[pts.length - 1];
+    if (end && end[avgKey] != null) { g.fillStyle = css("--ink"); g.textAlign = "left"; g.fillText(key === "A" ? "A←C" : "B←C", w - m.r + 4, Y(end[avgKey]) + 4); }
+  }
+  const tip = $("tip");
+  if (hoverX !== null && hoverX > m.l && hoverX < w - m.r) {
+    const t = now - span + (hoverX - m.l) / (w - m.l - m.r) * span;
+    let best = pts[0]; for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    g.strokeStyle = css("--muted"); g.lineWidth = 1; g.beginPath(); g.moveTo(X(best.t), m.t); g.lineTo(X(best.t), h - m.b); g.stroke();
+    const r = c.getBoundingClientRect();
+    tip.style.display = "block"; tip.style.left = (r.left + X(best.t) + 12) + "px"; tip.style.top = (r.top + 10) + "px";
+    tip.textContent = `${(now - best.t).toFixed(1)} s ago · A←C ${fmt(best.nA)} · B←C ${fmt(best.nB)} dBm`;
+  } else tip.style.display = "none";
+}
+$("trace").addEventListener("pointermove", (e) => { hoverX = e.clientX - $("trace").getBoundingClientRect().left; });
+$("trace").addEventListener("pointerleave", () => { hoverX = null; $("tip").style.display = "none"; });
+const fmt = (v) => (v == null ? "–" : (+v).toFixed(1));
+
+// ---------- text ----------
+function drawText() {
+  const s = state, chips = $("chips"); chips.innerHTML = "";
+  const chip = (text, cls) => { const c = document.createElement("span"); c.className = "chip " + (cls || ""); c.textContent = text; chips.append(c); };
+  for (const k of ["A", "B"]) chip(`${k}←C ${(s.rate[k] || 0).toFixed(1)}/s`, (s.rate[k] || 0) < 3 ? "bad" : "");
+  for (const [k, v] of Object.entries(s.rate)) if (k.includes(":")) chip(`${k.replace(":", "←")} ${v.toFixed(1)}/s`);
+  chip(s.recording ? "journaling" : "not journaling", s.recording ? "on" : "");
+  $("needleTxt").textContent = s.angle == null ? "–" : `${Math.round(s.angle)}°`;
+  $("trackedTxt").textContent = `${s.tracked}°`;
+  $("stateTxt").textContent = s.moving ? "moving" : "settled";
+  $("aTxt").textContent = fmt(s.now_avg.A); $("bTxt").textContent = fmt(s.now_avg.B);
+  const bars = $("bars"); bars.innerHTML = "";
+  for (const p of POS) {
+    const v = s.probs[p] || 0, row = document.createElement("div"); row.className = "bar";
+    row.innerHTML = `<span>${p}°</span><span class="track"><i style="width:${(v * 100).toFixed(1)}%;background:${colorOf(p)}"></i></span><span>${Math.round(v * 100)}%</span>`;
+    bars.append(row);
+  }
+  const ol = $("moves"); ol.innerHTML = s.moves.length ? "" : '<li class="muted">none yet</li>';
+  for (const mv of s.moves) {
+    const li = document.createElement("li"), turn = ((mv.to - mv.from) % 360 + 360) % 360;
+    const word = { 0: "no turn", 90: "clockwise", 180: "half turn", 270: "counter-clockwise" }[turn];
+    li.innerHTML = `<span class="muted">${new Date(mv.t * 1000).toLocaleTimeString()}</span><span>${mv.from}° → <b>${mv.to}°</b> ${word}</span>` +
+      `<span class="muted">A ${mv.dA > 0 ? "+" : ""}${mv.dA} B ${mv.dB > 0 ? "+" : ""}${mv.dB} · ${mv.why}</span>`;
+    ol.append(li);
+  }
+}
+
+// ---------- stream ----------
+function onState(s) {
+  state = s;
+  hist.push({ t: s.t, A: s.latest.A, B: s.latest.B, nA: s.now_avg.A, nB: s.now_avg.B });
+  while (hist.length && hist[0].t < s.t - 300) hist.shift();
+  if (!formsFilled) fillForms();
+  drawText(); drawDial(); drawPlane(); drawTrace();
+}
+function connect() {
+  const es = new EventSource("/events");
+  es.onmessage = (e) => { const s = JSON.parse(e.data); if (s.t) onState(s); };
+  es.onerror = () => { $("chips").innerHTML = '<span class="chip bad">lost rot_live.py, retrying…</span>'; };
+}
+connect();
+window.addEventListener("resize", () => { if (state) { drawPlane(); drawTrace(); } });
+</script>
+</body>
+</html>

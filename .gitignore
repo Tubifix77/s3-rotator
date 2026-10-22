@@ -1,0 +1,7 @@
+.claude/
+__pycache__/
+*.pyc
+# the uncompressed R0 recording (51 MB); the repo keeps captures/r0-2026-10-23.jsonl.gz
+captures/r0-2026-10-23.jsonl
+# a to-scale map of the owner's home, kept private
+bench-plan.html
