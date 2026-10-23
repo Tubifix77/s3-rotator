@@ -89,4 +89,4 @@ Then tell Claude in the s3-rotator session; it runs the analysis.
 ## 8. Afterwards
 
 1. Put C back where step 1 recorded, facing the same way, on its usual power.
-2. Tell Claude. It asks Potluck to roll the tee back, which restarts all three boards. **Leave the room for about 2 minutes** while they restart, so passive-sensor relearns an empty room.
+2. Tell Claude. It asks Potluck to roll the tee back, which restarts all three boards. (The empty room that was planned for passive-sensor's relearn turned out not to be needed, 2026-10-23.)

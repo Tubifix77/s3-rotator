@@ -116,7 +116,8 @@ The project stopped here.
   - **Before R0**, mark or photograph C's normal spot and orientation.
   - **After R0**, put C back there as closely as practical.
   - **Then, with nobody in the room**, restart all three boards (or re-apply the package) and keep the room empty for about 2 minutes. Each board learns its empty-room baselines in about 60 s after it starts and keeps no saved copy. Without this, a baseline that included you, or a link to C that has shifted by more than 2.5 dB, can hold "present" indefinitely.
-  - passive-sensor would like R0's dB shift per orientation on C's links, for its LEDGER.
+  - passive-sensor would like R0's dB shift per orientation on C's links, for its LEDGER. (Sent 2026-10-23; it's in passive-sensor's LEDGER as L3.44.)
+  - **Update 2026-10-23: the empty-room relearn isn't needed after all** (passive-sensor's session). Nothing reads its output now, and its next test starts with its own fresh deploy and learning.
 - **Board:** ESP32-S3-DevKitC-1 N16R8, ESP32-S3-WROOM-1 with the on-module PCB antenna (check that the can doesn't say -1U).
 
 ## Physical setup
